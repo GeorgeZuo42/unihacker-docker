@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-
+using System.Collections;
 namespace UniHacker
 {
     public partial class Program
@@ -27,7 +27,7 @@ namespace UniHacker
 
         public static async Task Main(string[] args)
         {
-            var filePath = string.Empty;
+            var filePathList = new List<string>();
             TryGetEnvironmentVariable(UNITY_PATH, out var unityPath);
             TryGetEnvironmentVariable(HUB_PATH, out var hubPath);
             TryGetEnvironmentVariable(EXEC_METHOD, out var execMethod);
@@ -38,9 +38,9 @@ namespace UniHacker
                     $"\t\t{UNITY_PATH}: {unityPath}\n" +
                     $"\t\t{EXEC_METHOD}: {execMethod}\n");
 
-                filePath = unityPath;
+                filePathList.Add(unityPath);
             }
-            else if (hubPath != null)
+            if (hubPath != null)
             {
                 var hasNeedLogin = TryGetEnvironmentVariable(NEED_LOGIN, out var needLogin, bool.FalseString);
                 var hasDisableUpdate = TryGetEnvironmentVariable(DISABLE_UPDATE, out var disableUpdate, bool.FalseString);
@@ -51,9 +51,9 @@ namespace UniHacker
                     $"\t\t{NEED_LOGIN}: {needLogin}{(hasNeedLogin ? "" : " (Default)")}\n" +
                     $"\t\t{DISABLE_UPDATE}: {disableUpdate}{(hasDisableUpdate ? "" : " (Default)")}\n");
 
-                filePath = hubPath;
+                filePathList.Add(hubPath);
             }
-            else
+            if(filePathList.Count == 0)
             {
                 await MessageBox.Show($"Please provide {nameof(UNITY_PATH)} parameter or {nameof(HUB_PATH)} parameter");
                 return;
@@ -64,52 +64,54 @@ namespace UniHacker
                 await MessageBox.Show("Please run as an administrator.");
                 return;
             }
+            foreach(var filePath in filePathList){
+                var patcher = PatchManager.GetPatcher(filePath, PlatformUtils.GetPlatformType());
+                var status = patcher?.PatchStatus ?? PatchStatus.Unknown;
+                var architectureName = MachineArchitecture.GetArchitectureName(patcher?.ArchitectureType ?? ArchitectureType.UnKnown);
+                await MessageBox.Show($"Information.\n" +
+                    $"\t\tVersion: {patcher?.FileVersion}({architectureName})\n" +
+                    $"\t\tStatus: {status}\n" +
+                    $"\t\tPlatform: {PlatformUtils.GetPlatformType()}\n");
 
-            var patcher = PatchManager.GetPatcher(filePath, PlatformUtils.GetPlatformType());
-            var status = patcher?.PatchStatus ?? PatchStatus.Unknown;
-            var architectureName = MachineArchitecture.GetArchitectureName(patcher?.ArchitectureType ?? ArchitectureType.UnKnown);
-            await MessageBox.Show($"Information.\n" +
-                $"\t\tVersion: {patcher?.FileVersion}({architectureName})\n" +
-                $"\t\tStatus: {status}\n" +
-                $"\t\tPlatform: {PlatformUtils.GetPlatformType()}\n");
-
-            if (patcher == null || patcher.PatchStatus == PatchStatus.Unknown)
-            {
-                await MessageBox.Show($"Unknown binary file. '{filePath}'");
-                return;
-            }
-
-            if (!MethodNames.Contains(execMethod!))
-            {
-                await MessageBox.Show($"Unknown '{EXEC_METHOD}' parameter: {execMethod}");
-                return;
-            }
-
-            try
-            {
-                switch (execMethod)
+                if (patcher == null || patcher.PatchStatus == PatchStatus.Unknown)
                 {
-                    case PATCH:
-                        {
-                            (bool success, string errorMsg) = await patcher.ApplyPatch(progress => { });
-                            if (!success)
-                                throw new Exception(errorMsg);
-                        }
-                        break;
-                    case RESTORE:
-                        {
-                            (bool success, string errorMsg) = await patcher.RemovePatch(progress => { });
-                            if (!success)
-                                throw new Exception(errorMsg);
-                        }
-                        break;
+                    await MessageBox.Show($"Unknown binary file. '{filePath}'");
+                    return;
                 }
-                await MessageBox.Show($"Successfully {execMethod}.");
+
+                if (!MethodNames.Contains(execMethod!))
+                {
+                    await MessageBox.Show($"Unknown '{EXEC_METHOD}' parameter: {execMethod}");
+                    return;
+                }
+
+                try
+                {
+                    switch (execMethod)
+                    {
+                        case PATCH:
+                            {
+                                (bool success, string errorMsg) = await patcher.ApplyPatch(progress => { });
+                                if (!success)
+                                    throw new Exception(errorMsg);
+                            }
+                            break;
+                        case RESTORE:
+                            {
+                                (bool success, string errorMsg) = await patcher.RemovePatch(progress => { });
+                                if (!success)
+                                    throw new Exception(errorMsg);
+                            }
+                            break;
+                    }
+                    await MessageBox.Show($"Successfully {execMethod}.");
+                }
+                catch (Exception ex)
+                {
+                    await MessageBox.Show(ex.ToString());
+                }
             }
-            catch (Exception ex)
-            {
-                await MessageBox.Show(ex.ToString());
-            }
+        
         }
 
         public static bool TryGetEnvironmentVariable(string variable, out string? value, string? defaultValue = null)
